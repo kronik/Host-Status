@@ -12,6 +12,12 @@
 #define PANEL_WIDTH 280
 #define MENU_ANIMATION_DURATION .1
 
+@interface PanelController ()
+
+@property (nonatomic, strong) NSMutableDictionary *items;
+
+@end
+
 #pragma mark -
 
 @implementation PanelController
@@ -20,6 +26,8 @@
 @synthesize delegate = _delegate;
 @synthesize hostField = _hostField;
 @synthesize okButton = _okButton;
+@synthesize tableView = _tableView;
+@synthesize items = _items;
 
 #pragma mark -
 
@@ -29,6 +37,7 @@
     if (self != nil)
     {
         _delegate = delegate;
+        _items = [[NSMutableDictionary alloc] init];
     }
     return self;
 }
@@ -56,8 +65,7 @@
     panelRect.size.height = POPUP_HEIGHT;
     [[self window] setFrame:panelRect display:NO];
     
-    // Follow search string
-//    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(runSearch) name:NSControlTextDidChangeNotification object:self.hostField];
+    _items = [[NSMutableDictionary alloc] init];
 }
 
 #pragma mark - Public accessors
@@ -253,6 +261,26 @@
         
         [self.window orderOut:nil];
     });
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)aTableView
+{
+    return 0;
+}
+
+- (id)tableView:(NSTableView *)aTableView objectValueForTableColumn:(NSTableColumn *)aTableColumn row:(NSInteger)rowIndex
+{
+    return nil;
+}
+
+- (void)tableView:(NSTableView *)aTableView setObjectValue:(id)anObject forTableColumn:(NSTableColumn *)aTableColumn row:(NSInteger)rowIndex
+{
+    
+}
+
+- (NSCell*)tableView:(NSTableView *)tableView dataCellForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row
+{
+    return nil;
 }
 
 @end
