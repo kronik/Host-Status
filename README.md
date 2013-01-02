@@ -1,4 +1,7 @@
-Host-Status
-===========
+# Popup
 
-Mac OSX app to track status of the remote host (availability)
+Popup project is a demo with custom popover window appearing from the icon in the Mac OS X status bar.
+
+# License
+
+Popup is licensed under the BSD license.
