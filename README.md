@@ -1,7 +1,7 @@
-# Popup
+# Host Status
 
-Popup project is a demo with custom popover window appearing from the icon in the Mac OS X status bar.
+Host Status project is a host availability tracking app with custom popover window appearing from the icon in the Mac OS X status bar.
 
 # License
 
-Popup is licensed under the BSD license.
+Host Status is licensed under the MIT license.
