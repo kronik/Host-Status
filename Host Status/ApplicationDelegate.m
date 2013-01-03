@@ -74,7 +74,7 @@ void *kContextActivePanel = &kContextActivePanel;
     NSUserNotification *notification = [[NSUserNotification alloc] init];
     
     notification.title = @"Server status changed.";
-    notification.informativeText = [NSString stringWithFormat: @"Server is %@", status];
+    notification.subtitle = [NSString stringWithFormat: @"Server is %@", status];
     notification.soundName = NSUserNotificationDefaultSoundName;
     
     [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
