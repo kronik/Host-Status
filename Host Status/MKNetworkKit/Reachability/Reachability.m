@@ -71,11 +71,7 @@ static NSString *reachabilityFlags(SCNetworkReachabilityFlags flags)
 static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkReachabilityFlags flags, void* info) 
 {
 #pragma unused (target)
-#if __has_feature(objc_arc)
     Reachability *reachability = ((__bridge Reachability*)info);
-#else
-    Reachability *reachability = ((Reachability*)info);
-#endif
     
     // we probably dont need an autoreleasepool here as GCD docs state each queue has its own autorelease pool
     // but what the heck eh?
@@ -87,16 +83,6 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 
 
 @implementation Reachability
-
-@synthesize reachabilityRef;
-@synthesize reachabilitySerialQueue;
-
-@synthesize reachableOnWWAN;
-
-@synthesize reachableBlock;
-@synthesize unreachableBlock;
-
-@synthesize reachabilityObject;
 
 #pragma mark - class constructor methods
 +(Reachability*)reachabilityWithHostname:(NSString*)hostname
@@ -180,9 +166,6 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
         CFRelease(self.reachabilityRef);
         self.reachabilityRef = nil;
     }
-
-	self.reachableBlock		= nil;
-	self.unreachableBlock	= nil;
     
 #if !(__has_feature(objc_arc))
     [super dealloc];
@@ -216,11 +199,8 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
         return NO;
     }
     
-#if __has_feature(objc_arc)
+    
     context.info = (__bridge void *)self;
-#else
-    context.info = (void *)self;
-#endif
     
     if (!SCNetworkReachabilitySetCallback(self.reachabilityRef, TMReachabilityCallback, &context)) 
     {
@@ -343,7 +323,7 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 
     SCNetworkReachabilityFlags flags = 0;
     
-    if(SCNetworkReachabilityGetFlags(reachabilityRef, &flags)) 
+    if(SCNetworkReachabilityGetFlags(self.reachabilityRef, &flags))
     {
         // check we're REACHABLE
         if(flags & kSCNetworkReachabilityFlagsReachable)
@@ -364,7 +344,7 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 {
     SCNetworkReachabilityFlags flags = 0;
     
-    if(SCNetworkReachabilityGetFlags(reachabilityRef, &flags)) 
+    if(SCNetworkReachabilityGetFlags(self.reachabilityRef, &flags)) 
     {
         // check we're reachable
         if((flags & kSCNetworkReachabilityFlagsReachable))
@@ -395,7 +375,7 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 {
     SCNetworkReachabilityFlags flags;
 	
-	if(SCNetworkReachabilityGetFlags(reachabilityRef, &flags)) 
+	if(SCNetworkReachabilityGetFlags(self.reachabilityRef, &flags)) 
     {
 		return (flags & kSCNetworkReachabilityFlagsConnectionRequired);
 	}
@@ -408,7 +388,7 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 {
 	SCNetworkReachabilityFlags flags;
 	
-	if (SCNetworkReachabilityGetFlags(reachabilityRef, &flags)) 
+	if (SCNetworkReachabilityGetFlags(self.reachabilityRef, &flags)) 
     {
 		return ((flags & kSCNetworkReachabilityFlagsConnectionRequired) &&
 				(flags & (kSCNetworkReachabilityFlagsConnectionOnTraffic | kSCNetworkReachabilityFlagsConnectionOnDemand)));
@@ -422,7 +402,7 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 {
     SCNetworkReachabilityFlags flags;
 	
-	if (SCNetworkReachabilityGetFlags(reachabilityRef, &flags)) 
+	if (SCNetworkReachabilityGetFlags(self.reachabilityRef, &flags))
     {
 		return ((flags & kSCNetworkReachabilityFlagsConnectionRequired) &&
 				(flags & kSCNetworkReachabilityFlagsInterventionRequired));
@@ -453,7 +433,7 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 {
     SCNetworkReachabilityFlags flags = 0;
     
-    if(SCNetworkReachabilityGetFlags(reachabilityRef, &flags)) 
+    if(SCNetworkReachabilityGetFlags(self.reachabilityRef, &flags))
     {
         return flags;
     }
@@ -465,7 +445,7 @@ static void TMReachabilityCallback(SCNetworkReachabilityRef target, SCNetworkRea
 {
 	NetworkStatus temp = [self currentReachabilityStatus];
 	
-	if(temp == reachableOnWWAN)
+	if(temp == self.reachableOnWWAN)
 	{
         // updated for the fact we have CDMA phones now!
 		return NSLocalizedString(@"Cellular", @"");

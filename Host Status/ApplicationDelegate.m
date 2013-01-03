@@ -1,14 +1,14 @@
 #import "ApplicationDelegate.h"
-#import "Reachability.h"
+#import "MKNetworkKit.h"
 
 #define HOST_ADDRESS @"HOST_ADDRESS_FOR_TRACKING"
+#define CHEKC_FREQUECY 5.0
 
 @interface ApplicationDelegate ()
-{
-    Reachability *reachManager;
-}
 
 @property (nonatomic, strong) NSString *currentHost;
+@property (nonatomic, strong) MKNetworkEngine *netManager;
+@property (nonatomic, strong) NSMutableDictionary *serversStatus;
 
 @end
 
@@ -17,6 +17,8 @@
 @synthesize panelController = _panelController;
 @synthesize menubarController = _menubarController;
 @synthesize currentHost = _currentHost;
+@synthesize netManager = _netManager;
+@synthesize serversStatus = _serversStatus;
 
 #pragma mark -
 
@@ -45,6 +47,8 @@ void *kContextActivePanel = &kContextActivePanel;
 {
     [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:self];
 
+    self.serversStatus = [[NSMutableDictionary alloc] init];
+
     // Install icon into the menu bar
     self.menubarController = [[MenubarController alloc] init];
     
@@ -54,6 +58,9 @@ void *kContextActivePanel = &kContextActivePanel;
     {
         savedHost = @"www.google.com";
     }
+    
+    self.serversStatus[savedHost] = @YES;
+
     
     self.currentHost = savedHost;
     
@@ -86,38 +93,75 @@ void *kContextActivePanel = &kContextActivePanel;
     {
         _currentHost = currentHost;
         
-        if (reachManager != nil)
+        if (self.netManager != nil)
         {
-            [reachManager stopNotifier];
+            self.netManager = nil;
         }
         
         __block id selfRef = self;
         
-        reachManager = [Reachability reachabilityWithHostname: self.currentHost];
+        NSURL *hostUrl = [NSURL URLWithString:self.currentHost];
         
-        reachManager.reachableBlock = ^(Reachability * reachability)
-        {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self.menubarController.statusItemView.image = [NSImage imageNamed:@"yes"];
-                
-                [selfRef showNotification: @"alive!"];
-            });
-        };
+        self.netManager = [[MKNetworkEngine alloc] initWithHostName:hostUrl.host];
         
-        reachManager.unreachableBlock = ^(Reachability * reachability)
+        self.netManager.reachabilityChangedHandler = ^(NetworkStatus ns)
         {
-            dispatch_async(dispatch_get_main_queue(), ^{
+            if (ns == NotReachable)
+            {                
                 self.menubarController.statusItemView.image = [NSImage imageNamed:@"no"];
                 
-                [selfRef showNotification: @"down again!"];
-            });
+                if ([self.serversStatus[self.currentHost] boolValue] == YES)
+                {
+                    [selfRef showNotification: @"down again!"];
+                }
+                
+                self.serversStatus[self.currentHost] = @NO;
+            }
+            else
+            {
+                [selfRef tryToDownloadSomething];
+            }
         };
-        
-        [reachManager startNotifier];
-        
+                        
         [[NSUserDefaults standardUserDefaults] setValue:currentHost forKey:HOST_ADDRESS];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
+}
+
+- (void)tryToDownloadSomething
+{
+    MKNetworkOperation *operationToExecute = [[MKNetworkOperation alloc] initWithURLString:self.currentHost params:nil httpMethod:@"GET"];
+    
+    [operationToExecute addCompletionHandler:^(MKNetworkOperation *completedOperation)
+    {
+        self.menubarController.statusItemView.image = [NSImage imageNamed:@"yes"];
+        
+        if ([self.serversStatus[self.currentHost] boolValue] == NO)
+        {
+            [self showNotification: @"alive!"];
+        }
+        
+        self.serversStatus[self.currentHost] = @YES;
+
+        [self performSelector:@selector(tryToDownloadSomething) withObject:nil afterDelay:CHEKC_FREQUECY];
+    }
+    errorHandler:^(MKNetworkOperation *completedOperation, NSError *error)
+    {
+        self.menubarController.statusItemView.image = [NSImage imageNamed:@"no"];
+        
+        if ([self.serversStatus[self.currentHost] boolValue] == YES)
+        {
+            [self showNotification: @"down again!"];
+        }
+        
+        self.serversStatus[self.currentHost] = @NO;
+
+        NSLog (@"Net error: %@", error);
+        
+        [self performSelector:@selector(tryToDownloadSomething) withObject:nil afterDelay:CHEKC_FREQUECY];
+    }];
+    
+    [self.netManager enqueueOperation:operationToExecute forceReload:YES];
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
