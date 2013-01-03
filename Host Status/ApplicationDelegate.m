@@ -43,6 +43,8 @@ void *kContextActivePanel = &kContextActivePanel;
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification
 {
+    [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:self];
+
     // Install icon into the menu bar
     self.menubarController = [[MenubarController alloc] init];
     
@@ -62,6 +64,22 @@ void *kContextActivePanel = &kContextActivePanel;
     
 }
 
+- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification
+{
+    return YES;
+}
+
+- (void)showNotification:(NSString*)status
+{
+    NSUserNotification *notification = [[NSUserNotification alloc] init];
+    
+    notification.title = @"Server status changed.";
+    notification.informativeText = [NSString stringWithFormat: @"Server is %@", status];
+    notification.soundName = NSUserNotificationDefaultSoundName;
+    
+    [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
+}
+
 - (void)setCurrentHost:(NSString *)currentHost
 {
     if ([_currentHost isEqualToString: currentHost] == NO)
@@ -73,12 +91,16 @@ void *kContextActivePanel = &kContextActivePanel;
             [reachManager stopNotifier];
         }
         
+        __block id selfRef = self;
+        
         reachManager = [Reachability reachabilityWithHostname: self.currentHost];
         
         reachManager.reachableBlock = ^(Reachability * reachability)
         {
             dispatch_async(dispatch_get_main_queue(), ^{
                 self.menubarController.statusItemView.image = [NSImage imageNamed:@"yes"];
+                
+                [selfRef showNotification: @"alive!"];
             });
         };
         
@@ -86,6 +108,8 @@ void *kContextActivePanel = &kContextActivePanel;
         {
             dispatch_async(dispatch_get_main_queue(), ^{
                 self.menubarController.statusItemView.image = [NSImage imageNamed:@"no"];
+                
+                [selfRef showNotification: @"down again!"];
             });
         };
         
