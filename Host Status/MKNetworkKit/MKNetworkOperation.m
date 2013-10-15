@@ -25,6 +25,8 @@
 
 #import "MKNetworkKit.h"
 
+#import <ImageIO/ImageIO.h>
+
 #ifdef __OBJC_GC__
 #error MKNetworkKit does not support Objective-C Garbage Collection
 #endif
@@ -87,7 +89,7 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
 
 @property (strong, nonatomic) NSError *error;
 
-- (id)initWithURLString:(NSString *)aURLString
+- (instancetype)initWithURLString:(NSString *)aURLString
                  params:(NSDictionary *)body
              httpMethod:(NSString *)method;
 
@@ -110,12 +112,14 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
 
 -(BOOL) isCacheable {
   
+  if(self.shouldNotCacheResponse) return NO;
   if(self.username != nil) return NO;
   if(self.password != nil) return NO;
   if(self.clientCertificate != nil) return NO;
   if(self.clientCertificatePassword != nil) return NO;
-  if(![self.request.HTTPMethod isEqualToString:@"GET"]) return NO;  
-  if([self.request.URL.scheme.lowercaseString isEqualToString:@"https"]) return NO;
+  if(![self.request.HTTPMethod isEqualToString:@"GET"]) return NO;
+  if([self.request.URL.scheme.lowercaseString isEqualToString:@"https"]) return self.shouldCacheResponseEvenIfProtocolIsHTTPS;
+  if(self.downloadStreams.count > 0) return NO; // should not cache operations that have streams attached
   return YES;
 }
 
@@ -252,7 +256,10 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
 
 
 -(BOOL) isEqual:(id)object {
-  
+  if(object == self)
+    return YES;
+  if(!object || ![object isKindOfClass:[self class]])
+    return NO;
   if([self.request.HTTPMethod isEqualToString:@"GET"] || [self.request.HTTPMethod isEqualToString:@"HEAD"]) {
     
     MKNetworkOperation *anotherObject = (MKNetworkOperation*) object;
@@ -262,6 +269,9 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
   return NO;
 }
 
+-(NSUInteger) hash {
+  return [[self uniqueIdentifier] hash];
+}
 
 -(NSString*) uniqueIdentifier {
   
@@ -366,7 +376,7 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
   [encoder encodeInteger:self.credentialPersistence forKey:@"credentialPersistence"];
 }
 
-- (id)initWithCoder:(NSCoder *)decoder
+- (instancetype)initWithCoder:(NSCoder *)decoder
 {
   self = [super init];
   if (self) {
@@ -397,7 +407,7 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
   return self;
 }
 
-- (id)copyWithZone:(NSZone *)zone
+- (instancetype)copyWithZone:(NSZone *)zone
 {
   MKNetworkOperation *theCopy = [[[self class] allocWithZone:zone] init];  // use designated initializer
   
@@ -432,6 +442,81 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
   [theCopy setCredentialPersistence:self.credentialPersistence];
   
   return theCopy;
+}
+
+
+- (instancetype)mutableCopyWithZone:(NSZone *)zone
+{
+  MKNetworkOperation *theCopy = [[[self class] allocWithZone:zone] init];  // use designated initializer
+  
+  theCopy.postDataEncoding = _postDataEncoding;
+  [theCopy setStringEncoding:self.stringEncoding];
+  [theCopy setUniqueId:[self.uniqueId copy]];
+  
+  [theCopy setConnection:[self.connection mutableCopy]];
+  [theCopy setRequest:[self.request mutableCopy]];
+  [theCopy setResponse:[self.response mutableCopy]];
+  [theCopy setFieldsToBePosted:[self.fieldsToBePosted mutableCopy]];
+  [theCopy setFilesToBePosted:[self.filesToBePosted mutableCopy]];
+  [theCopy setDataToBePosted:[self.dataToBePosted mutableCopy]];
+  [theCopy setUsername:[self.username copy]];
+  [theCopy setPassword:[self.password copy]];
+  [theCopy setClientCertificate:[self.clientCertificate copy]];
+  [theCopy setClientCertificatePassword:[self.clientCertificatePassword copy]];
+  [theCopy setResponseBlocks:[self.responseBlocks mutableCopy]];
+  [theCopy setErrorBlocks:[self.errorBlocks mutableCopy]];
+  [theCopy setErrorBlocksType2:[self.errorBlocksType2 mutableCopy]];
+  [theCopy setState:self.state];
+  [theCopy setIsCancelled:self.isCancelled];
+  [theCopy setMutableData:[self.mutableData mutableCopy]];
+  [theCopy setDownloadedDataSize:self.downloadedDataSize];
+  [theCopy setNotModifiedHandlers:[self.notModifiedHandlers mutableCopy]];
+  [theCopy setUploadProgressChangedHandlers:[self.uploadProgressChangedHandlers mutableCopy]];
+  [theCopy setDownloadProgressChangedHandlers:[self.downloadProgressChangedHandlers mutableCopy]];
+  [theCopy setDownloadStreams:[self.downloadStreams mutableCopy]];
+  [theCopy setCachedResponse:[self.cachedResponse mutableCopy]];
+  [theCopy setCacheHandlingBlock:self.cacheHandlingBlock];
+  [theCopy setStartPosition:self.startPosition];
+  [theCopy setCredentialPersistence:self.credentialPersistence];
+  
+  return theCopy;
+}
+
+- (instancetype)copyForRetry
+{
+    MKNetworkOperation *theCopy = [[[self class] alloc] init];
+    
+    [theCopy setConnection:nil];
+    [theCopy setResponse:nil];
+    [theCopy setState:MKNetworkOperationStateReady];
+    [theCopy setIsCancelled:NO];
+    [theCopy setDownloadedDataSize:0];
+    [theCopy setStartPosition:0];
+
+    theCopy.postDataEncoding = _postDataEncoding;
+    [theCopy setStringEncoding:self.stringEncoding];
+    [theCopy setUniqueId:[self.uniqueId copy]];
+    [theCopy setRequest:[self.request copy]];
+    [theCopy setFieldsToBePosted:[self.fieldsToBePosted mutableCopy]];
+    [theCopy setFilesToBePosted:[self.filesToBePosted mutableCopy]];
+    [theCopy setDataToBePosted:[self.dataToBePosted mutableCopy]];
+    [theCopy setUsername:[self.username copy]];
+    [theCopy setPassword:[self.password copy]];
+    [theCopy setClientCertificate:[self.clientCertificate copy]];
+    [theCopy setClientCertificatePassword:[self.clientCertificatePassword copy]];
+    [theCopy setResponseBlocks:[self.responseBlocks mutableCopy]];
+    [theCopy setErrorBlocks:[self.errorBlocks mutableCopy]];
+    [theCopy setErrorBlocksType2:[self.errorBlocksType2 mutableCopy]];
+    [theCopy setMutableData:[self.mutableData mutableCopy]];
+    [theCopy setNotModifiedHandlers:[self.notModifiedHandlers mutableCopy]];
+    [theCopy setUploadProgressChangedHandlers:[self.uploadProgressChangedHandlers mutableCopy]];
+    [theCopy setDownloadProgressChangedHandlers:[self.downloadProgressChangedHandlers mutableCopy]];
+    [theCopy setDownloadStreams:[self.downloadStreams mutableCopy]];
+    [theCopy setCachedResponse:[self.cachedResponse mutableCopy]];
+    [theCopy setCacheHandlingBlock:self.cacheHandlingBlock];
+    [theCopy setCredentialPersistence:self.credentialPersistence];
+    
+    return theCopy;
 }
 
 -(void) dealloc {
@@ -561,9 +646,15 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
          [method isEqualToString:@"DELETE"]) && (params && [params count] > 0)) {
       
       finalURL = [NSURL URLWithString:[NSString stringWithFormat:@"%@?%@", aURLString,
-                                       [self encodedPostDataString]]];
+                                       [self.fieldsToBePosted urlEncodedKeyValueString]]];
     } else {
       finalURL = [NSURL URLWithString:aURLString];
+    }
+    
+    if(finalURL == nil) {
+      
+      DLog(@"Cannot create a URL with %@ and parameters %@ and method %@", aURLString, self.fieldsToBePosted, method);
+      return nil;
     }
     
     self.request = [NSMutableURLRequest requestWithURL:finalURL
@@ -571,10 +662,6 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
                                        timeoutInterval:kMKNetworkKitRequestTimeOutInSeconds];
     
     [self.request setHTTPMethod:method];
-    
-    [self.request setValue:[NSString stringWithFormat:@"%@, en-us",
-                            [[NSLocale preferredLanguages] componentsJoinedByString:@", "]
-                            ] forHTTPHeaderField:@"Accept-Language"];
     
     if (([method isEqualToString:@"POST"] ||
          [method isEqualToString:@"PUT"]) && (params && [params count] > 0)) {
@@ -588,11 +675,26 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
   return self;
 }
 
+-(void) addParams:(NSDictionary*) paramsDictionary {
+  
+  [self.fieldsToBePosted addEntriesFromDictionary:paramsDictionary];
+}
+
 -(void) addHeaders:(NSDictionary*) headersDictionary {
   
   [headersDictionary enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
     [self.request addValue:obj forHTTPHeaderField:key];
   }];
+}
+
+-(void) addHeader:(NSString*)key withValue:(NSString*)value {
+  
+  [self.request addValue:value forHTTPHeaderField:key];
+}
+
+-(void) setHeader:(NSString*)key withValue:(NSString*)value {
+  
+  [self.request setValue:value forHTTPHeaderField:key];
 }
 
 -(void) setAuthorizationHeaderValue:(NSString*) token forAuthType:(NSString*) authType {
@@ -625,11 +727,11 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
   if([self.filesToBePosted count] == 0 && [self.dataToBePosted count] == 0) {
     [[self.request allHTTPHeaderFields] enumerateKeysAndObjectsUsingBlock:^(id key, id val, BOOL *stop)
      {
-       [displayString appendFormat:@" -H \"%@: %@\"", key, val];
+       [displayString appendFormat:@" -H \'%@: %@\'", key, val];
      }];
   }
   
-  [displayString appendFormat:@" \"%@\"",  self.url];
+  [displayString appendFormat:@" \'%@\'",  self.url];
   
   if ([self.request.HTTPMethod isEqualToString:@"POST"] ||
       [self.request.HTTPMethod isEqualToString:@"PUT"] ||
@@ -639,17 +741,17 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,
     if(self.postDataEncoding == MKNKPostDataEncodingTypeURL) {
       [self.fieldsToBePosted enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
         
-        [displayString appendFormat:@" %@ \"%@=%@\"", option, key, obj];
+        [displayString appendFormat:@" %@ \'%@=%@\'", option, key, obj];
       }];
     } else {
-      [displayString appendFormat:@" -d \"%@\"", [self encodedPostDataString]];
+      [displayString appendFormat:@" -d \'%@\'", [self encodedPostDataString]];
     }
     
     
     [self.filesToBePosted enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
       
       NSDictionary *thisFile = (NSDictionary*) obj;
-      [displayString appendFormat:@" -F \"%@=@%@;type=%@\"", thisFile[@"name"],
+      [displayString appendFormat:@" -F \'%@=@%@;type=%@\'", thisFile[@"name"],
        thisFile[@"filepath"], thisFile[@"mimetype"]];
     }];
     
@@ -1032,26 +1134,11 @@ OSStatus extractIdentityAndTrust(CFDataRef inPKCS12Data,        // 5
         SecTrustEvaluate(self.serverTrust, &result);
         
         if(result == kSecTrustResultProceed ||
-           result == kSecTrustResultUnspecified || //The cert is valid, but user has not explicitly accepted/denied. Ok to proceed (Ch 15: iOS PTL :Pg 269)
-           result == kSecTrustResultRecoverableTrustFailure //The cert is invalid, but is invalid because of name mismatch. Ok to proceed (Ch 15: iOS PTL :Pg 269)
+           result == kSecTrustResultUnspecified //The cert is valid, but user has not explicitly accepted/denied. Ok to proceed (Ch 15: iOS PTL :Pg 269)
            ) {
           
           [challenge.sender useCredential:[NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust] forAuthenticationChallenge:challenge];
-        }
-        else if(result == kSecTrustResultConfirm) {
-          
-          if(self.shouldContinueWithInvalidCertificate) {
-            
-            // Cert not trusted, but user is OK with that
-            DLog(@"Certificate is not trusted, but self.shouldContinueWithInvalidCertificate is YES");
-            [challenge.sender useCredential:[NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust] forAuthenticationChallenge:challenge];
-          } else {
-            
-            DLog(@"Certificate is not trusted, continuing without credentials. Might result in 401 Unauthorized");
-            [challenge.sender continueWithoutCredentialForAuthenticationChallenge:challenge];
-          }
-        }
-        else {
+        } else {
           
           // invalid or revoked certificate
           if(self.shouldContinueWithInvalidCertificate) {
@@ -1218,15 +1305,26 @@ totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite {
              willSendRequest: (NSURLRequest *)inRequest
             redirectResponse: (NSURLResponse *)inRedirectResponse;
 {
+  NSMutableURLRequest *r = [self.request mutableCopy];
   if (inRedirectResponse) {
-    NSMutableURLRequest *r = [self.request mutableCopy];
     [r setURL: [inRequest URL]];
-    
-    return r;
   } else {
-    return inRequest;
+    // Note that we need to configure the Accept-Language header this late in processing
+    // because NSURLRequest adds a default Accept-Language header late in the day, so we
+    // have to undo that here.
+    // For discussion see:
+    // http://lists.apple.com/archives/macnetworkprog/2009/Sep/msg00022.html
+    // http://stackoverflow.com/questions/5695914/nsurlrequest-where-an-app-can-find-the-default-headers-for-http-request
+    NSString* accept_language = self.shouldSendAcceptLanguageHeader ? [self languagesFromLocale] : nil;
+    [r setValue:accept_language forHTTPHeaderField:@"Accept-Language"];
   }
+  return r;
 }
+
+- (NSString*)languagesFromLocale {
+    return [NSString stringWithFormat:@"%@, en-us", [[NSLocale preferredLanguages] componentsJoinedByString:@", "]];
+}
+
 - (void)connectionDidFinishLoading:(NSURLConnection *)connection {
   
   if([self isCancelled])
@@ -1240,6 +1338,7 @@ totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite {
   if (self.response.statusCode >= 200 && self.response.statusCode < 300 && ![self isCancelled]) {
     
     self.cachedResponse = nil; // remove cached data
+
     [self notifyCache];
     [self operationSucceeded];
     
@@ -1305,57 +1404,15 @@ totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite {
 -(void) decompressedResponseImageOfSize:(CGSize) size completionHandler:(void (^)(UIImage *decompressedImage)) imageDecompressionHandler {
   
   dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-    
-    __block CGSize targetSize = size;
-    UIImage *image = [self responseImage];
-    CGImageRef imageRef = image.CGImage;
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGImageAlphaInfo alphaInfo = CGImageGetAlphaInfo(imageRef);
-    BOOL sameSize = NO;
-    if (CGSizeEqualToSize(targetSize, CGSizeMake(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef)))) {
-      targetSize = CGSizeMake(1, 1);
-      sameSize = YES;
-    }
-    
-    size_t imageWidth = (size_t)targetSize.width;
-    size_t imageHeight = (size_t)targetSize.height;
-    
-    CGContextRef context = CGBitmapContextCreate(NULL,
-                                                 imageWidth,
-                                                 imageHeight,
-                                                 8,
-                                                 // Just always return width * 4 will be enough
-                                                 imageWidth * 4,
-                                                 // System only supports RGB, set explicitly
-                                                 colorSpace,
-                                                 // Makes system don't need to do extra conversion when displayed.
-                                                 alphaInfo | kCGBitmapByteOrder32Little);
-    CGColorSpaceRelease(colorSpace);
-    if (!context) {
-      return;
-    }
-    
-    
-    CGRect rect = (CGRect){CGPointZero, {imageWidth, imageHeight}};
-    CGContextDrawImage(context, rect, imageRef);
-    if (sameSize) {
-      CGContextRelease(context);
-      dispatch_async(dispatch_get_main_queue(), ^{
-        imageDecompressionHandler(image);
-      });
-      return;
-    }
-    CGImageRef decompressedImageRef = CGBitmapContextCreateImage(context);
-    CGContextRelease(context);
-    
-    static float scale = 0.0f;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-      scale = [UIScreen mainScreen].scale;
-    });
-    
-    UIImage *decompressedImage = [[UIImage alloc] initWithCGImage:decompressedImageRef scale:scale orientation:image.imageOrientation];
-    CGImageRelease(decompressedImageRef);
+
+    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)([self responseData]), NULL);
+    CGImageRef cgImage = CGImageSourceCreateImageAtIndex(source, 0, (__bridge CFDictionaryRef)(@{(id)kCGImageSourceShouldCache:@(YES)}));
+    UIImage *decompressedImage = [UIImage imageWithCGImage:cgImage];
+    if(source)
+      CFRelease(source);
+    if(cgImage)
+      CGImageRelease(cgImage);
+
     dispatch_async(dispatch_get_main_queue(), ^{
       imageDecompressionHandler(decompressedImage);
     });
@@ -1385,6 +1442,11 @@ totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite {
 
 -(void) responseJSONWithCompletionHandler:(void (^)(id jsonObject)) jsonDecompressionHandler {
   
+  [self responseJSONWithOptions:0 completionHandler:jsonDecompressionHandler];
+}
+
+-(void) responseJSONWithOptions:(NSJSONReadingOptions) options completionHandler:(void (^)(id jsonObject)) jsonDecompressionHandler {
+  
   if([self responseData] == nil) {
     
     jsonDecompressionHandler(nil);
@@ -1394,7 +1456,7 @@ totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite {
   dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
     
     NSError *error = nil;
-    id returnValue = [NSJSONSerialization JSONObjectWithData:[self responseData] options:0 error:&error];
+    id returnValue = [NSJSONSerialization JSONObjectWithData:[self responseData] options:options error:&error];
     if(error) {
       
       DLog(@"JSON Parsing Error: %@", error);
@@ -1408,6 +1470,7 @@ totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite {
     });
   });
 }
+
 #pragma mark -
 #pragma mark Overridable methods
 

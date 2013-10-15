@@ -8,13 +8,13 @@
 
 #define SEARCH_INSET 17
 
-#define POPUP_HEIGHT 60
+#define POPUP_HEIGHT 234
 #define PANEL_WIDTH 280
 #define MENU_ANIMATION_DURATION .1
 
 @interface PanelController ()
 
-@property (nonatomic, strong) NSMutableDictionary *items;
+@property (nonatomic, strong) NSTimer *updateTimer;
 
 @end
 
@@ -27,30 +27,29 @@
 @synthesize hostField = _hostField;
 @synthesize okButton = _okButton;
 @synthesize tableView = _tableView;
-@synthesize items = _items;
+@synthesize hostsList = _hostsList;
+@synthesize updateTimer = _updateTimer;
 
 #pragma mark -
 
-- (id)initWithDelegate:(id<PanelControllerDelegate>)delegate
-{
+- (id)initWithDelegate:(id<PanelControllerDelegate>)delegate {
     self = [super initWithWindowNibName:@"Panel"];
-    if (self != nil)
-    {
+    
+    if (self != nil) {
         _delegate = delegate;
-        _items = [[NSMutableDictionary alloc] init];
     }
     return self;
 }
 
-- (void)dealloc
-{
+- (void)dealloc {
+    [self.updateTimer invalidate];
+    
     [[NSNotificationCenter defaultCenter] removeObserver:self];    
 }
 
 #pragma mark -
 
-- (void)awakeFromNib
-{
+- (void)awakeFromNib {
     [super awakeFromNib];
     
     // Make a fully skinned panel
@@ -64,29 +63,21 @@
     NSRect panelRect = [[self window] frame];
     panelRect.size.height = POPUP_HEIGHT;
     [[self window] setFrame:panelRect display:NO];
-    
-    _items = [[NSMutableDictionary alloc] init];
 }
 
 #pragma mark - Public accessors
 
-- (BOOL)hasActivePanel
-{
+- (BOOL)hasActivePanel {
     return _hasActivePanel;
 }
 
-- (void)setHasActivePanel:(BOOL)flag
-{
-    if (_hasActivePanel != flag)
-    {
+- (void)setHasActivePanel:(BOOL)flag {
+    if (_hasActivePanel != flag) {
         _hasActivePanel = flag;
         
-        if (_hasActivePanel)
-        {
+        if (_hasActivePanel) {
             [self openPanel];
-        }
-        else
-        {
+        } else {
             [self closePanel];
         }
     }
@@ -94,21 +85,17 @@
 
 #pragma mark - NSWindowDelegate
 
-- (void)windowWillClose:(NSNotification *)notification
-{
+- (void)windowWillClose:(NSNotification *)notification {
     self.hasActivePanel = NO;
 }
 
-- (void)windowDidResignKey:(NSNotification *)notification;
-{
-    if ([[self window] isVisible])
-    {
-        self.hasActivePanel = NO;
-    }
+- (void)windowDidResignKey:(NSNotification *)notification; {
+//    if ([[self window] isVisible]) {
+//        self.hasActivePanel = NO;
+//    }
 }
 
-- (void)windowDidResize:(NSNotification *)notification
-{
+- (void)windowDidResize:(NSNotification *)notification {
     NSWindow *panel = [self window];
     NSRect statusRect = [self statusRectForWindow:panel];
     NSRect panelRect = [panel frame];
@@ -123,12 +110,9 @@
     searchRect.origin.x = SEARCH_INSET;
     searchRect.origin.y = NSHeight([self.backgroundView bounds]) - ARROW_HEIGHT - SEARCH_INSET - NSHeight(searchRect);
     
-    if (NSIsEmptyRect(searchRect))
-    {
+    if (NSIsEmptyRect(searchRect)) {
         [self.hostField setHidden:YES];
-    }
-    else
-    {
+    } else {
         [self.hostField setFrame:searchRect];
         [self.hostField setHidden:NO];
     }
@@ -138,12 +122,9 @@
     textRect.origin.x = NSWidth([self.backgroundView bounds]) - SEARCH_INSET * 2 - 15;
     textRect.origin.y = NSHeight([self.backgroundView bounds]) - ARROW_HEIGHT - SEARCH_INSET - NSHeight(searchRect);
     
-    if (NSIsEmptyRect(textRect))
-    {
+    if (NSIsEmptyRect(textRect)) {
         [self.okButton setHidden:YES];
-    }
-    else
-    {
+    } else {
         [self.okButton setFrame:textRect];
         [self.okButton setHidden:NO];
     }
@@ -151,60 +132,66 @@
 
 #pragma mark - Keyboard
 
-- (void)cancelOperation:(id)sender
-{
+- (void)cancelOperation:(id)sender {
     self.hasActivePanel = NO;
 }
 
-- (IBAction)okButtonClicked:(id)sender
-{
-    [self saveAndQuit];
+- (IBAction)okButtonClicked:(id)sender {
+    [self saveAndUpdate];
 }
 
-- (void)saveAndQuit
-{
-    [self.delegate hostAddressChanged: self.hostField.stringValue];
-    [self closePanel];
+- (void)saveAndUpdate {
+    //[self.delegate hostAddressChanged: self.hostField.stringValue];
+    
+    NSString *host = self.hostField.stringValue;
+    
+    self.hostField.stringValue = @"";
+    
+    if (host.length > 0) {
+        if ([host rangeOfString:@"http"].location == NSNotFound) {
+            host = [NSString stringWithFormat:@"http://%@", host];
+        }
+        self.hostsList [host] = @NO;
+    }
+    
+    [self.delegate hostAddressListChanged:self.hostsList];
+    
+    [self.tableView reloadData];
+    //[self closePanel];
 }
 
--(void)controlTextDidEndEditing:(NSNotification *)notification
-{
+-(void)controlTextDidEndEditing:(NSNotification *)notification {
     // See if it was due to a return
-    if ( [[[notification userInfo] objectForKey:@"NSTextMovement"] intValue] == NSReturnTextMovement )
-    {        
-        [self saveAndQuit];
+    if ( [[[notification userInfo] objectForKey:@"NSTextMovement"] intValue] == NSReturnTextMovement ) {
+        [self saveAndUpdate];
     }
 }
 
 #pragma mark - Public methods
 
-- (NSRect)statusRectForWindow:(NSWindow *)window
-{
+- (NSRect)statusRectForWindow:(NSWindow *)window {
     NSRect screenRect = [[[NSScreen screens] objectAtIndex:0] frame];
     NSRect statusRect = NSZeroRect;
     
     StatusItemView *statusItemView = nil;
-    if ([self.delegate respondsToSelector:@selector(statusItemViewForPanelController:)])
-    {
+    
+    if ([self.delegate respondsToSelector:@selector(statusItemViewForPanelController:)]) {
         statusItemView = [self.delegate statusItemViewForPanelController:self];
     }
     
-    if (statusItemView)
-    {
+    if (statusItemView) {
         statusRect = statusItemView.globalRect;
         statusRect.origin.y = NSMinY(statusRect) - NSHeight(statusRect);
-    }
-    else
-    {
+    } else {
         statusRect.size = NSMakeSize(STATUS_ITEM_VIEW_WIDTH, [[NSStatusBar systemStatusBar] thickness]);
         statusRect.origin.x = roundf((NSWidth(screenRect) - NSWidth(statusRect)) / 2);
         statusRect.origin.y = NSHeight(screenRect) - NSHeight(statusRect) * 2;
     }
+    
     return statusRect;
 }
 
-- (void)openPanel
-{
+- (void)openPanel {
     NSWindow *panel = [self window];
     
     NSRect screenRect = [[[NSScreen screens] objectAtIndex:0] frame];
@@ -226,13 +213,13 @@
     NSTimeInterval openDuration = OPEN_DURATION;
     
     NSEvent *currentEvent = [NSApp currentEvent];
-    if ([currentEvent type] == NSLeftMouseDown)
-    {
+    
+    if ([currentEvent type] == NSLeftMouseDown) {
         NSUInteger clearFlags = ([currentEvent modifierFlags] & NSDeviceIndependentModifierFlagsMask);
         BOOL shiftPressed = (clearFlags == NSShiftKeyMask);
         BOOL shiftOptionPressed = (clearFlags == (NSShiftKeyMask | NSAlternateKeyMask));
-        if (shiftPressed || shiftOptionPressed)
-        {
+        
+        if (shiftPressed || shiftOptionPressed) {
             openDuration *= 10;
             
             if (shiftOptionPressed)
@@ -247,11 +234,10 @@
     [[panel animator] setAlphaValue:1];
     [NSAnimationContext endGrouping];
     
-    [panel performSelector:@selector(makeFirstResponder:) withObject:self.hostField afterDelay:openDuration];
+    //[panel performSelector:@selector(makeFirstResponder:) withObject:self.hostField afterDelay:openDuration];
 }
 
-- (void)closePanel
-{
+- (void)closePanel {
     [NSAnimationContext beginGrouping];
     [[NSAnimationContext currentContext] setDuration:CLOSE_DURATION];
     [[[self window] animator] setAlphaValue:0];
@@ -263,23 +249,58 @@
     });
 }
 
-- (NSInteger)numberOfRowsInTableView:(NSTableView *)aTableView
-{
-    return 0;
-}
-
-- (id)tableView:(NSTableView *)aTableView objectValueForTableColumn:(NSTableColumn *)aTableColumn row:(NSInteger)rowIndex
-{
-    return nil;
-}
-
-- (void)tableView:(NSTableView *)aTableView setObjectValue:(id)anObject forTableColumn:(NSTableColumn *)aTableColumn row:(NSInteger)rowIndex
-{
+- (void)setHostsList:(NSMutableDictionary *)hostsList {
+    _hostsList = hostsList;// [@{@"www.ay.ru" : @YES, @"www.ayadf.ru" : @YES} mutableCopy];
     
+    [self.tableView reloadData];
+    
+    if (self.updateTimer == nil) {
+        self.updateTimer = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(updateTableView) userInfo:nil repeats:YES];
+    }
 }
 
-- (NSCell*)tableView:(NSTableView *)tableView dataCellForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row
-{
+- (void)updateTableView {
+    [self.tableView reloadData];
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)aTableView {
+    return self.hostsList.count;
+}
+- (NSView *)tableView:(NSTableView *)tableView viewForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)rowIndex {
+    int index = 0;
+    NSString *keyForCell = @"";
+    
+    for (NSString *host in self.hostsList) {
+        if (index == rowIndex) {
+            keyForCell = host;
+            break;
+        } else {
+            index++;
+        }
+    }
+    
+    NSTableCellView *cellView = [tableView makeViewWithIdentifier:tableColumn.identifier owner:self];
+    
+    // Since this is a single-column table view, this would not be necessary.
+    // But it's a good practice to do it in order by remember it when a table is multicolumn.
+    if ( [tableColumn.identifier isEqualToString:@"StatusColumn"] ) {
+        cellView.imageView.image = [self.hostsList[keyForCell] boolValue] ? [NSImage imageNamed:@"yes"] : [NSImage imageNamed:@"no"];
+        
+//        keyForCell = [keyForCell stringByReplacingOccurrencesOfString:@"http://" withString:@""];
+//        keyForCell = [keyForCell stringByReplacingOccurrencesOfString:@"https://" withString:@""];
+
+        cellView.textField.stringValue = keyForCell;
+        
+        return cellView;
+    }
+    
+    return cellView;
+}
+
+- (void)tableView:(NSTableView *)aTableView setObjectValue:(id)anObject forTableColumn:(NSTableColumn *)aTableColumn row:(NSInteger)rowIndex {
+}
+
+- (NSCell*)tableView:(NSTableView *)tableView dataCellForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row {
     return nil;
 }
 

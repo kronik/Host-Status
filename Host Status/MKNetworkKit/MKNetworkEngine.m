@@ -59,13 +59,6 @@
 @property (assign, nonatomic) dispatch_queue_t operationQueue;
 #endif
 
--(void) saveCache;
--(void) saveCacheData:(NSData*) data forKey:(NSString*) cacheDataKey;
-
--(void) freezeOperations;
--(void) checkAndRestoreFrozenOperations;
-
--(BOOL) isCacheEnabled;
 @end
 
 static NSOperationQueue *_sharedNetworkQueue;
@@ -104,8 +97,13 @@ static NSOperationQueue *_sharedNetworkQueue;
 
 - (id) initWithHostName:(NSString*) hostName apiPath:(NSString*) apiPath customHeaderFields:(NSDictionary*) headers {
   
+  return [self initWithHostName:hostName portNumber:0 apiPath:apiPath customHeaderFields:headers];
+}
+
+- (id) initWithHostName:(NSString*) hostName portNumber:(int)portNumber apiPath:(NSString*) apiPath customHeaderFields:(NSDictionary*) headers {
   if((self = [super init])) {
     
+    self.portNumber = portNumber;
     self.apiPath = apiPath;
     self.backgroundCacheQueue = dispatch_queue_create("com.mknetworkkit.cachequeue", DISPATCH_QUEUE_SERIAL);
     self.operationQueue = dispatch_queue_create("com.mknetworkkit.operationqueue", DISPATCH_QUEUE_SERIAL);
@@ -138,6 +136,7 @@ static NSOperationQueue *_sharedNetworkQueue;
     }
     
     self.customOperationSubclass = [MKNetworkOperation class];
+    self.shouldSendAcceptLanguageHeader = YES;
   }
   
   return self;
@@ -152,6 +151,20 @@ static NSOperationQueue *_sharedNetworkQueue;
 #pragma mark Memory Mangement
 
 -(void) dealloc {
+  
+#if TARGET_OS_IPHONE
+#if __IPHONE_OS_VERSION_MIN_REQUIRED < 60000
+  dispatch_release(_backgroundCacheQueue);
+  dispatch_release(_operationQueue);
+#endif
+  
+#else
+  
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 1080
+  dispatch_release(_backgroundCacheQueue);
+  dispatch_release(_operationQueue);
+#endif
+#endif
   
   [[NSNotificationCenter defaultCenter] removeObserver:self name:kReachabilityChangedNotification object:nil];
 #if TARGET_OS_IPHONE
@@ -242,7 +255,33 @@ static NSOperationQueue *_sharedNetworkQueue;
     [NSKeyedArchiver archiveRootObject:operation toFile:archivePath];
     [operation cancel];
   }
+}
+
++(void) cancelOperationsContainingURLString:(NSString*) string {
   
+  [self cancelOperationsMatchingBlock:^BOOL (MKNetworkOperation* op) {
+    return [[op.readonlyRequest.URL absoluteString] rangeOfString:string].location != NSNotFound;
+  }];
+}
+
++(void) cancelOperationsMatchingBlock:(BOOL (^)(MKNetworkOperation* op))block {
+    
+    NSArray *runningOperations = _sharedNetworkQueue.operations;
+    [runningOperations enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+        
+        MKNetworkOperation *thisOperation = obj;
+        if (block(thisOperation))
+            [thisOperation cancel];
+    }];
+}
+
+-(void) cancelAllOperations {
+
+  if(self.hostName) {
+    [MKNetworkEngine cancelOperationsContainingURLString:self.hostName];
+  } else {
+    DLog(@"Host name is not set. Cannot cancel operations.");
+  }
 }
 
 -(void) checkAndRestoreFrozenOperations {
@@ -358,6 +397,7 @@ static NSOperationQueue *_sharedNetworkQueue;
                                    httpMethod:(NSString*)method {
   
   MKNetworkOperation *operation = [[self.customOperationSubclass alloc] initWithURLString:urlString params:body httpMethod:method];
+  operation.shouldSendAcceptLanguageHeader = self.shouldSendAcceptLanguageHeader;
   
   [self prepareHeaders:operation];
   return operation;
@@ -393,16 +433,22 @@ static NSOperationQueue *_sharedNetworkQueue;
 -(void) enqueueOperation:(MKNetworkOperation*) operation forceReload:(BOOL) forceReload {
   
   NSParameterAssert(operation != nil);
+  if(operation == nil) return;
+  
   dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    
+    
+     __block id weakSelf = self;
+    
     [operation setCacheHandler:^(MKNetworkOperation* completedCacheableOperation) {
       
       // if this is not called, the request would have been a non cacheable request
       //completedCacheableOperation.cacheHeaders;
       NSString *uniqueId = [completedCacheableOperation uniqueIdentifier];
-      [self saveCacheData:[completedCacheableOperation responseData]
+      [weakSelf saveCacheData:[completedCacheableOperation responseData]
                    forKey:uniqueId];
       
-      (self.cacheInvalidationParams)[uniqueId] = completedCacheableOperation.cacheHeaders;
+      ([weakSelf cacheInvalidationParams])[uniqueId] = completedCacheableOperation.cacheHeaders;
     }];
     
     __block double expiryTimeInSeconds = 0.0f;
@@ -430,7 +476,10 @@ static NSOperationQueue *_sharedNetworkQueue;
               expiryTimeInSeconds = [expiresOnDate timeIntervalSinceNow];
             });
             
-            [operation updateOperationBasedOnPreviousHeaders:savedCacheHeaders];
+            dispatch_async(dispatch_get_main_queue(), ^{
+              
+              [operation updateOperationBasedOnPreviousHeaders:savedCacheHeaders];
+            });
           }
         }
       }
@@ -444,8 +493,11 @@ static NSOperationQueue *_sharedNetworkQueue;
           
           MKNetworkOperation *queuedOperation = (MKNetworkOperation*) (operations)[index];
           operationFinished = [queuedOperation isFinished];
-          if(!operationFinished)
-            [queuedOperation updateHandlersFromOperation:operation];
+          if(!operationFinished) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+              [queuedOperation updateHandlersFromOperation:operation];
+            });
+          }
         }
         
         if(expiryTimeInSeconds <= 0 || forceReload || operationFinished)
@@ -476,16 +528,18 @@ static NSOperationQueue *_sharedNetworkQueue;
     }
   
   MKNetworkOperation *op = [self operationWithURLString:[url absoluteString]];
-  
+  op.shouldCacheResponseEvenIfProtocolIsHTTPS = YES;
+
   [op addCompletionHandler:^(MKNetworkOperation *completedOperation) {
     
-    imageFetchedBlock([completedOperation responseImage],
-                      url,
-                      [completedOperation isCachedResponse]);
+    if (imageFetchedBlock)
+        imageFetchedBlock([completedOperation responseImage],
+                          url,
+                          [completedOperation isCachedResponse]);
     
   } errorHandler:^(MKNetworkOperation *completedOperation, NSError *error) {
-    
-    errorBlock(completedOperation, error);
+      if (errorBlock)
+          errorBlock(completedOperation, error);
   }];
   
   [self enqueueOperation:op];
@@ -508,19 +562,20 @@ static NSOperationQueue *_sharedNetworkQueue;
     }
   
   MKNetworkOperation *op = [self operationWithURLString:[url absoluteString]];
-  
+  op.shouldCacheResponseEvenIfProtocolIsHTTPS = YES;
+
   [op addCompletionHandler:^(MKNetworkOperation *completedOperation) {
     [completedOperation decompressedResponseImageOfSize:size
                                       completionHandler:^(UIImage *decompressedImage) {
-                                        
-                                        imageFetchedBlock(decompressedImage,
-                                                          url,
-                                                          [completedOperation isCachedResponse]);
+                                          if (imageFetchedBlock)
+                                              imageFetchedBlock(decompressedImage,
+                                                                url,
+                                                                [completedOperation isCachedResponse]);
                                       }];
   } errorHandler:^(MKNetworkOperation *completedOperation, NSError *error) {
-    
-    errorBlock(completedOperation, error);
-    DLog(@"%@", error);
+      if (errorBlock)
+          errorBlock(completedOperation, error);
+      DLog(@"%@", error);
   }];
   
   [self enqueueOperation:op];

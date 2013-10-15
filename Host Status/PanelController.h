@@ -5,7 +5,7 @@
 
 @protocol PanelControllerDelegate <NSObject>
 
-- (void)hostAddressChanged: (NSString *)newHostAddress;
+- (void)hostAddressListChanged: (NSMutableDictionary *)newHostAddressList;
 
 @optional
 
@@ -29,6 +29,7 @@
 @property (nonatomic, unsafe_unretained) IBOutlet NSTextField *hostField;
 @property (nonatomic, unsafe_unretained) IBOutlet NSButton *okButton;
 @property (nonatomic, unsafe_unretained) IBOutlet NSTableView *tableView;
+@property (nonatomic, strong) NSMutableDictionary *hostsList;
 
 @property (nonatomic) BOOL hasActivePanel;
 @property (nonatomic, unsafe_unretained, readonly) id<PanelControllerDelegate> delegate;

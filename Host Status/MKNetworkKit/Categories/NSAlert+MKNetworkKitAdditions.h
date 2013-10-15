@@ -25,7 +25,6 @@
 
 #if !TARGET_OS_IPHONE
 #import <AppKit/AppKit.h>
-#import "MKNetworkKit.h"
 
 @interface NSAlert (MKNetworkKitAdditions)
 +(NSAlert*) showWithError:(NSError*) networkError;

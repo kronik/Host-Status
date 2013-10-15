@@ -1,8 +1,8 @@
 //
-//  NSString+MKNetworkKitAdditions.h
-//  MKNetworkKitDemo
+//  UIImageView+MKNetworkKitAdditions.h
+//  MKNetworkKit-iOS
 //
-//  Created by Mugunth Kumar (@mugunthkumar) on 11/11/11.
+//  Created by Mugunth Kumar (@mugunthkumar) on 18/01/13.
 //  Copyright (C) 2011-2020 by Steinlogic Consulting and Training Pte Ltd
 
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -23,10 +23,18 @@
 //  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 //  THE SOFTWARE.
 
-@interface NSString (MKNetworkKitAdditions)
+#import <UIKit/UIKit.h>
 
-- (NSString *) md5;
-+ (NSString*) uniqueString;
-- (NSString*) mk_urlEncodedString;
-- (NSString*) urlDecodedString;
+extern const float kFromCacheAnimationDuration;
+extern const float kFreshLoadAnimationDuration;
+
+@class MKNetworkEngine;
+@class MKNetworkOperation;
+
+@interface UIImageView (MKNetworkKitAdditions)
++(void) setDefaultEngine:(MKNetworkEngine*) engine;
+-(MKNetworkOperation*) setImageFromURL:(NSURL*) url;
+-(MKNetworkOperation*) setImageFromURL:(NSURL*) url placeHolderImage:(UIImage*) image;
+-(MKNetworkOperation*) setImageFromURL:(NSURL*) url placeHolderImage:(UIImage*) image animation:(BOOL) yesOrNo;
+-(MKNetworkOperation*) setImageFromURL:(NSURL*) url placeHolderImage:(UIImage*) image usingEngine:(MKNetworkEngine*) imageCacheEngine animation:(BOOL) yesOrNo;
 @end

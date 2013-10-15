@@ -29,7 +29,7 @@
 
 +(NSAlert*) showWithError:(NSError*) networkError {
 
-    DLog(@"%@", [networkError userInfo]);
+    NSLog(@"%@", [networkError userInfo]);
     
     NSAlert *alert = [NSAlert alertWithError:networkError];
     [alert runModal];
